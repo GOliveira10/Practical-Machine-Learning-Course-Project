@@ -1,0 +1,101 @@
+---
+title: "Practical Machine Learning Project"
+author: "Grant Oliveira"
+date: "September 27, 2015"
+output: html_document
+---
+
+## Introduction  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.  
+
+In this project, we will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the manner in which they did the exercise.  
+
+### Load all required packages
+```{r, cache = T}
+require(caret)
+require(rpart)
+require(rpart.plot)
+require(randomForest)
+require(corrplot)
+```
+
+### Load data
+```{r, cache = T}
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile= "./pml-training.csv", method="curl")
+
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "./pml-testing.csv", method="curl")
+
+trainRaw <- read.csv("./pml-training.csv")
+testRaw <- read.csv("./pml-testing.csv")
+dim(trainRaw)
+dim(testRaw)
+```
+
+The training data set contains 19622 observations and 160 variables, while the testing data set contains 20 observations and 160 variables. The "classe" variable in the training set is the outcome to predict. 
+
+### Data Wrangling
+
+First we'll want to remove all of the NAs
+
+```{r, cache = T}
+trainRaw <- trainRaw[, colSums(is.na(trainRaw)) == 0] ##Remove NAs
+testRaw <- testRaw[, colSums(is.na(testRaw)) == 0] 
+```  
+
+
+After doing so we look through the variable list to clean out all the variables that are not relevant to the lifts performed by the test subjects. This will allow our ML algorithm to run faster and exclude garbage variables.
+
+```{r, cache = T}
+classe <- trainRaw$classe
+trainRemove <- grepl("^X|timestamp|window", names(trainRaw))
+trainRaw <- trainRaw[, !trainRemove]
+trainCleaned <- trainRaw[, sapply(trainRaw, is.numeric)]
+trainCleaned$classe <- classe
+testRemove <- grepl("^X|timestamp|window", names(testRaw))
+testRaw <- testRaw[, !testRemove]
+testCleaned <- testRaw[, sapply(testRaw, is.numeric)]
+```
+
+Now, the cleaned training data set contains 19622 observations and 53 variables, while the testing data set contains 20 observations and 53 variables. The "classe" variable is still in the cleaned training set.
+
+## Create Training and Test Datasets
+
+```{r, cache = T}
+inTrain <- createDataPartition(trainCleaned$classe, p=0.70, list=F)
+trainData <- trainCleaned[inTrain, ]
+testData <- trainCleaned[-inTrain, ]
+```
+
+## Apply ML Algorithm
+
+For this analysis we will be using the Random Forest algorithm to predict the quality of the participants exercise movements.
+
+```{r, cache = T}
+controlRf <- trainControl(method="cv", 5)
+modelRf <- train(classe ~ ., data=trainData, method="rf", trControl=controlRf, ntree=250)
+modelRf
+```
+
+Now we can estimate the performance of the algorithm and its out of sample error
+```{r, cache = T}
+predictRf <- predict(modelRf, testData)
+confusionMatrix(testData$classe, predictRf)
+```
+```{r, cache = T}
+accuracy <- postResample(predictRf, testData$classe)
+accuracy
+outsampleError <- 1 - as.numeric(confusionMatrix(testData$classe, predictRf)$overall[1])
+outsampleError
+```
+
+*Accuracy*: 99.29%
+*Out of Sample Error*: 0.71%.
+
+## Predicting the Test Set
+
+Now that we have what looks like a fairly reliable model, we can apply it to the test data set.
+
+```{r, cache = T}
+result <- predict(modelRf, testCleaned[, -length(names(testCleaned))])
+result
+```  
